@@ -8,7 +8,7 @@ ARG BUILDTIME
 ARG TARGETOS
 ARG TARGETARCH
 
-RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
+RUN CGO_ENABLED=0 \
     go build -ldflags "-X 'main.BuildTime=$BUILDTIME'" -o proxify .
 
 FROM alpine:latest
