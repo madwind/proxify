@@ -2,16 +2,13 @@ name: Build and Push Proxify Docker Image
 
 on:
   push:
-    branches:
-      - main
-  workflow_dispatch:
+    branches: [ "master" ]
 
 jobs:
   docker:
     runs-on: ubuntu-latest
 
     steps:
-
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -47,5 +44,3 @@ jobs:
             madwind/proxify:${{ env.VERSION }}
           build-args: |
             BUILDTIME=${{ env.BUILDTIME }}
-            TARGETOS=linux
-            TARGETARCH=amd64
