@@ -43,4 +43,5 @@ jobs:
             madwind/proxify:${{ env.VERSION }}
           build-args: |
             BUILDTIME=${{ env.BUILDTIME }}
-
+          cache-from: type=registry,ref=madwind/proxify:cache
+          cache-to: type=registry,ref=madwind/proxify:cache,mode=max
