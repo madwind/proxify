@@ -3,6 +3,7 @@ package handler
 import (
 	"crypto/tls"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"proxify/service"
@@ -47,7 +48,6 @@ func ProxyHandler(w http.ResponseWriter, r *http.Request) {
 	defer func(Body io.ReadCloser) {
 		err := Body.Close()
 		if err != nil {
-
 		}
 	}(resp.Body)
 
@@ -70,7 +70,13 @@ func ProxyHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	w.WriteHeader(resp.StatusCode)
-	io.Copy(w, resp.Body)
+
+	written, err := io.Copy(w, resp.Body)
+	if err != nil {
+		log.Printf("Error copying response body for %s: %v", targetURL, err)
+	}
+
+	log.Printf("Proxy request -> %s , status=%d , size=%d bytes", targetURL, resp.StatusCode, written)
 }
 
 func buildRequestHeader(header http.Header, targetURL string) http.Header {
