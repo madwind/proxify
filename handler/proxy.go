@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-var ignoreHeaders = []string{"host", "origin", "referer", "cdn-loop", "cf-", "x-"}
+var ignoreHeaders = []string{"host", "origin", "referer", "cdn-loop", "cf-", "x-", "ranges"}
 
 func ProxyHandler(w http.ResponseWriter, r *http.Request) {
 	targetURL := r.URL.Query().Get("url")
@@ -24,7 +24,7 @@ func ProxyHandler(w http.ResponseWriter, r *http.Request) {
 	tsInfo := strings.EqualFold(r.URL.Query().Get("tsInfo"), "true")
 	reqHeaders := buildRequestHeader(r.Header, targetURL)
 
-	req, err := http.NewRequest("GET", targetURL, nil)
+	req, err := http.NewRequest(r.Method, targetURL, nil)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -60,7 +60,10 @@ func ProxyHandler(w http.ResponseWriter, r *http.Request) {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"url":"` + targetURL + `","startTime":` + strconv.FormatFloat(startTime, 'f', 6, 64) + `}`))
+		_, err = w.Write([]byte(`{"url":"` + targetURL + `","startTime":` + strconv.FormatFloat(startTime, 'f', 6, 64) + `}`))
+		if err != nil {
+			return
+		}
 		return
 	}
 
