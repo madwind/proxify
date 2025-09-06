@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-var ignoreHeaders = []string{"host", "origin", "referer", "cdn-loop", "cf-", "x-", "ranges"}
+var ignoreHeaders = []string{"host", "origin", "referer", "cdn-loop", "cf-", "x-", "range"}
 
 func ProxyHandler(w http.ResponseWriter, r *http.Request) {
 	targetURL := r.URL.Query().Get("url")
