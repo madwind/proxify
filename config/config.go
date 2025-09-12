@@ -6,6 +6,7 @@ import (
 
 type Config struct {
 	ProxyPath string
+	ProxyPort string
 }
 
 func LoadConfig() *Config {
@@ -13,8 +14,13 @@ func LoadConfig() *Config {
 	if proxyPath == "" {
 		proxyPath = "/proxy"
 	}
+	proxyPort := os.Getenv("PROXY_PORT")
+	if proxyPort == "" {
+		proxyPort = "80"
+	}
 
 	return &Config{
 		ProxyPath: proxyPath,
+		ProxyPort: proxyPort,
 	}
 }

@@ -12,6 +12,6 @@ func main() {
 	fmt.Printf("Proxify version: %s", Version)
 	cfg := config.LoadConfig()
 	http.HandleFunc(cfg.ProxyPath, handler.ProxyHandler)
-	log.Printf("Proxify listening on :8080, proxy path: %s\n", cfg.ProxyPath)
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	log.Printf("Proxify listening on :%s, proxy path: %s\n", cfg.ProxyPort, cfg.ProxyPath)
+	log.Fatal(http.ListenAndServe(":"+cfg.ProxyPort, nil))
 }
