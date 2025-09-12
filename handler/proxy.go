@@ -20,6 +20,10 @@ func ProxyHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Missing url", http.StatusBadRequest)
 		return
 	}
+	upstream := r.URL.Query().Get("upstream")
+	if upstream != "" {
+		targetURL = upstream + targetURL
+	}
 
 	tsInfo := strings.EqualFold(r.URL.Query().Get("tsInfo"), "true")
 	reqHeaders := buildRequestHeader(r.Header, targetURL)
