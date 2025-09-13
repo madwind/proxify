@@ -6,8 +6,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"proxify/service"
-	"strconv"
+	"proxify/config"
 	"strings"
 	"time"
 )
@@ -20,15 +19,30 @@ func ProxyHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Missing url", http.StatusBadRequest)
 		return
 	}
+	var u *url.URL
+	var err error
+
 	upstream := r.URL.Query().Get("upstream")
 	if upstream != "" {
-		targetURL = upstream + url.QueryEscape(targetURL)
+		u, err = url.Parse("https://" + upstream + config.AppConfig.ProxyPath)
+		if err != nil {
+			http.Error(w, "Invalid upstream", http.StatusBadRequest)
+			return
+		}
+		q := u.Query()
+		q.Set("url", targetURL)
+		u.RawQuery = q.Encode()
+	} else {
+		u, err = url.Parse(targetURL)
+		if err != nil {
+			http.Error(w, "Invalid url", http.StatusBadRequest)
+			return
+		}
 	}
 
-	tsInfo := strings.EqualFold(r.URL.Query().Get("tsInfo"), "true")
 	reqHeaders := buildRequestHeader(r.Header, targetURL)
 
-	req, err := http.NewRequest(r.Method, targetURL, nil)
+	req, err := http.NewRequest(r.Method, u.String(), nil)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -54,22 +68,6 @@ func ProxyHandler(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 		}
 	}(resp.Body)
-
-	if tsInfo {
-		startTime, err := service.GetStartTimeFromStream(resp.Body)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_, err = w.Write([]byte(`{"url":"` + targetURL + `","startTime":` + strconv.FormatFloat(startTime, 'f', 6, 64) + `}`))
-		if err != nil {
-			return
-		}
-		return
-	}
 
 	for k, vals := range resp.Header {
 		for _, v := range vals {

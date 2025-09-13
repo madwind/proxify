@@ -10,8 +10,7 @@ import (
 
 func main() {
 	fmt.Printf("Proxify version: %s", Version)
-	cfg := config.LoadConfig()
-	http.HandleFunc(cfg.ProxyPath, handler.ProxyHandler)
-	log.Printf("Proxify listening on :%s, proxy path: %s\n", cfg.ProxyPort, cfg.ProxyPath)
-	log.Fatal(http.ListenAndServe(":"+cfg.ProxyPort, nil))
+	http.HandleFunc(config.AppConfig.ProxyPath, handler.ProxyHandler)
+	log.Printf("Proxify listening on :%s, proxy path: %s\n", config.AppConfig.ProxyPort, config.AppConfig.ProxyPath)
+	log.Fatal(http.ListenAndServe(":"+config.AppConfig.ProxyPort, nil))
 }
