@@ -22,7 +22,7 @@ func ProxyHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	upstream := r.URL.Query().Get("upstream")
 	if upstream != "" {
-		targetURL = fmt.Sprintf("%s%s", upstream, url.QueryEscape(targetURL))
+		targetURL = upstream + url.QueryEscape(targetURL)
 	}
 
 	tsInfo := strings.EqualFold(r.URL.Query().Get("tsInfo"), "true")
