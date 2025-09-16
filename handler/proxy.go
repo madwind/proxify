@@ -8,10 +8,24 @@ import (
 	"net/url"
 	"proxify/config"
 	"strings"
+	"sync"
 	"time"
 )
 
 var ignoreHeaders = []string{"host", "origin", "referer", "cdn-loop", "cf-", "x-", "range"}
+var client = &http.Client{
+	Timeout: 60 * time.Second,
+	Transport: &http.Transport{
+		TLSClientConfig:     &tls.Config{InsecureSkipVerify: true},
+		DisableCompression:  false,
+		MaxIdleConnsPerHost: 10,
+	},
+}
+var bufferPool = sync.Pool{
+	New: func() interface{} {
+		return make([]byte, 128*1024) // 32KB 默认缓冲区
+	},
+}
 
 func ProxyHandler(w http.ResponseWriter, r *http.Request) {
 	targetURL := r.URL.Query().Get("url")
@@ -49,15 +63,6 @@ func ProxyHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	req.Header = reqHeaders
 
-	client := &http.Client{
-		Timeout: 60 * time.Second,
-		Transport: &http.Transport{
-			TLSClientConfig:     &tls.Config{InsecureSkipVerify: true},
-			DisableCompression:  false,
-			MaxIdleConnsPerHost: 10,
-		},
-	}
-
 	resp, err := client.Do(req)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
@@ -75,13 +80,15 @@ func ProxyHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	w.WriteHeader(resp.StatusCode)
-
-	written, err := io.Copy(w, resp.Body)
+	buf := bufferPool.Get().([]byte)
+	defer bufferPool.Put(buf)
+	written, err := io.CopyBuffer(w, resp.Body, buf)
 	if err != nil {
 		log.Printf("Error copying response body for %s: %v", targetURL, err)
 	}
 
 	log.Printf("Proxy request -> %s , status=%d , size=%d bytes", targetURL, resp.StatusCode, written)
+
 }
 
 func buildRequestHeader(header http.Header, targetURL string) http.Header {

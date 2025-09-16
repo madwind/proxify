@@ -1,16 +1,21 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"net/http"
 	"proxify/config"
 	"proxify/handler"
+
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
 )
 
 func main() {
-	fmt.Printf("Proxify version: %s", Version)
 	http.HandleFunc(config.AppConfig.ProxyPath, handler.ProxyHandler)
-	log.Printf("Proxify listening on :%s, proxy path: %s\n", config.AppConfig.ProxyPort, config.AppConfig.ProxyPath)
-	log.Fatal(http.ListenAndServe(":"+config.AppConfig.ProxyPort, nil))
+	server := &http.Server{
+		Addr:    ":" + config.AppConfig.ProxyPort,
+		Handler: h2c.NewHandler(http.DefaultServeMux, &http2.Server{}),
+	}
+	log.Printf("Proxify %s listening on :%s, proxy path: %s\n", Version, config.AppConfig.ProxyPort, config.AppConfig.ProxyPath)
+	log.Fatal(server.ListenAndServe())
 }

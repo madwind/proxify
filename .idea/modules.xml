@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/proxify.iml" filepath="$PROJECT_DIR$/proxify.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/proxify.iml" filepath="$PROJECT_DIR$/.idea/proxify.iml" />
     </modules>
   </component>
 </project>
