@@ -9,7 +9,7 @@ ARG TARGETOS
 ARG TARGETARCH
 
 RUN CGO_ENABLED=0 \
-    go build -o proxify .
+    go build -o proxify -ldflags="-s -w" .
 
 FROM alpine:latest
 
