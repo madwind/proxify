@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-var ignoreHeaders = []string{"host", "origin", "referer", "cdn-loop", "cf-", "x-", "range"}
+var ignoreHeaders = []string{"host", "origin", "referer", "cdn-loop", "cf-", "x-", "range", "upgrade", "connection"}
 var client = &http.Client{
 	Timeout: 60 * time.Second,
 	Transport: &http.Transport{
