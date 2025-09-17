@@ -1,4 +1,4 @@
-FROM golang:1.25.1-alpine AS builder
+FROM golang:1.25.1-trixie AS builder
 
 WORKDIR /app
 
@@ -11,7 +11,7 @@ ARG TARGETARCH
 RUN CGO_ENABLED=0 \
     go build -o proxify -ldflags="-s -w" .
 
-FROM alpine:latest
+FROM debian:stable-slim
 
 WORKDIR /app
 COPY --from=builder /app/proxify .
