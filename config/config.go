@@ -3,8 +3,8 @@ package config
 import "os"
 
 type Config struct {
-	ProxyPath string
-	ProxyPort string
+	ProxyPath  string
+	SocketPath string
 }
 
 var AppConfig = &Config{
@@ -14,10 +14,10 @@ var AppConfig = &Config{
 		}
 		return "/proxy"
 	}(),
-	ProxyPort: func() string {
-		if v := os.Getenv("PROXY_PORT"); v != "" {
+	SocketPath: func() string {
+		if v := os.Getenv("SOCKET_PATH"); v != "" {
 			return v
 		}
-		return "80"
+		return "/dev/shm/proxify/proxify.sock"
 	}(),
 }
