@@ -16,9 +16,4 @@ FROM debian:stable-slim
 WORKDIR /app
 COPY --from=builder /app/proxify .
 
-ENV PROXY_PATH=/proxy
-ENV PORT=8080
-
-EXPOSE 8080
-
 CMD ["./proxify"]
