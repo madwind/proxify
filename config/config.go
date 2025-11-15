@@ -12,12 +12,12 @@ var AppConfig = &Config{
 		if v := os.Getenv("PROXY_PATH"); v != "" {
 			return v
 		}
-		return "/proxy"
+		return "/api/proxy/file"
 	}(),
 	SocketPath: func() string {
 		if v := os.Getenv("SOCKET_PATH"); v != "" {
 			return v
 		}
-		return "/dev/shm/proxify/proxify.sock"
+		return "/dev/shm/proxify.sock"
 	}(),
 }
