@@ -11,9 +11,9 @@ ARG TARGETARCH
 RUN CGO_ENABLED=0 \
     go build -o proxify -ldflags="-s -w" .
 
-FROM debian:stable-slim
+FROM scratch
 
 WORKDIR /app
 COPY --from=builder /app/proxify .
 
-CMD ["./proxify"]
+ENTRYPOINT ["./proxify"]
