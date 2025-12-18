@@ -3,7 +3,6 @@ package handler
 import (
 	"crypto/tls"
 	"fmt"
-	"github.com/golang-jwt/jwt/v5"
 	"io"
 	"log"
 	"net/http"
@@ -12,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/golang-jwt/jwt/v5"
 )
 
 var ignoreHeaders = []string{"host", "origin", "referer", "cdn-loop", "cf-", "x-", "range", "upgrade", "connection"}
@@ -37,10 +38,16 @@ func ProxyHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	var u *url.URL
 	var err error
-	var forwardAuth bool
+
 	upstream := r.URL.Query().Get("upstream")
+	if len(config.AppConfig.JwtKey) > 0 {
+		tokenString := r.URL.Query().Get("token")
+		if !validateToken(tokenString) {
+			http.Error(w, "Unauthorized: Invalid token", http.StatusUnauthorized)
+			return
+		}
+	}
 	if upstream != "" {
-		forwardAuth = true
 		u, err = url.Parse("https://" + upstream + config.AppConfig.ProxyPath)
 		if err != nil {
 			http.Error(w, "Invalid upstream", http.StatusBadRequest)
@@ -50,7 +57,6 @@ func ProxyHandler(w http.ResponseWriter, r *http.Request) {
 		q.Set("url", targetURL)
 		u.RawQuery = q.Encode()
 	} else {
-		forwardAuth = false
 		u, err = url.Parse(targetURL)
 		if err != nil {
 			http.Error(w, "Invalid url", http.StatusBadRequest)
@@ -58,7 +64,7 @@ func ProxyHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	reqHeaders := buildRequestHeader(r.Header, targetURL, forwardAuth)
+	reqHeaders := buildRequestHeader(r.Header, targetURL)
 
 	req, err := http.NewRequest(r.Method, u.String(), nil)
 	if err != nil {
@@ -95,7 +101,7 @@ func ProxyHandler(w http.ResponseWriter, r *http.Request) {
 
 }
 
-func buildRequestHeader(header http.Header, targetURL string, forwardAuth bool) http.Header {
+func buildRequestHeader(header http.Header, targetURL string) http.Header {
 	newHeader := http.Header{}
 	u, err := url.Parse(targetURL)
 	if err != nil {
@@ -104,12 +110,6 @@ func buildRequestHeader(header http.Header, targetURL string, forwardAuth bool) 
 	host := u.Host
 	for k, vals := range header {
 		lower := strings.ToLower(k)
-
-		if lower == "authorization" {
-			if !forwardAuth {
-				continue
-			}
-		}
 
 		skip := false
 		for _, ign := range ignoreHeaders {
@@ -125,35 +125,15 @@ func buildRequestHeader(header http.Header, targetURL string, forwardAuth bool) 
 	newHeader.Set("Host", host)
 	return newHeader
 }
-
-func AuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if len(config.AppConfig.JwtKey) == 0 {
-			next(w, r)
-			return
-		}
-
-		authHeader := r.Header.Get("Authorization")
-		if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
-			http.Error(w, "Unauthorized: No token provided", http.StatusUnauthorized)
-			return
-		}
-
-		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
-
-		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
-			}
-			return config.AppConfig.JwtKey, nil
-		})
-
-		if err != nil || !token.Valid {
-			log.Printf("JWT Auth Failed: %v", err)
-			http.Error(w, "Unauthorized: Invalid or expired token", http.StatusUnauthorized)
-			return
-		}
-
-		next(w, r)
+func validateToken(tokenString string) bool {
+	if tokenString == "" {
+		return false
 	}
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+		return config.AppConfig.JwtKey, nil
+	})
+	return err == nil && token.Valid
 }
