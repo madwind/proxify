@@ -37,9 +37,10 @@ func ProxyHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	var u *url.URL
 	var err error
-
+	var forwardAuth bool
 	upstream := r.URL.Query().Get("upstream")
 	if upstream != "" {
+		forwardAuth = true
 		u, err = url.Parse("https://" + upstream + config.AppConfig.ProxyPath)
 		if err != nil {
 			http.Error(w, "Invalid upstream", http.StatusBadRequest)
@@ -49,6 +50,7 @@ func ProxyHandler(w http.ResponseWriter, r *http.Request) {
 		q.Set("url", targetURL)
 		u.RawQuery = q.Encode()
 	} else {
+		forwardAuth = false
 		u, err = url.Parse(targetURL)
 		if err != nil {
 			http.Error(w, "Invalid url", http.StatusBadRequest)
@@ -56,7 +58,7 @@ func ProxyHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	reqHeaders := buildRequestHeader(r.Header, targetURL)
+	reqHeaders := buildRequestHeader(r.Header, targetURL, forwardAuth)
 
 	req, err := http.NewRequest(r.Method, u.String(), nil)
 	if err != nil {
@@ -93,16 +95,22 @@ func ProxyHandler(w http.ResponseWriter, r *http.Request) {
 
 }
 
-func buildRequestHeader(header http.Header, targetURL string) http.Header {
+func buildRequestHeader(header http.Header, targetURL string, forwardAuth bool) http.Header {
 	newHeader := http.Header{}
 	u, err := url.Parse(targetURL)
 	if err != nil {
 		return newHeader
 	}
 	host := u.Host
-
 	for k, vals := range header {
 		lower := strings.ToLower(k)
+
+		if lower == "authorization" {
+			if !forwardAuth {
+				continue
+			}
+		}
+
 		skip := false
 		for _, ign := range ignoreHeaders {
 			if strings.HasPrefix(lower, ign) {
