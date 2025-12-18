@@ -2,6 +2,8 @@ package handler
 
 import (
 	"crypto/tls"
+	"fmt"
+	"github.com/golang-jwt/jwt/v5"
 	"io"
 	"log"
 	"net/http"
@@ -114,4 +116,36 @@ func buildRequestHeader(header http.Header, targetURL string) http.Header {
 	}
 	newHeader.Set("Host", host)
 	return newHeader
+}
+
+func AuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if len(config.AppConfig.JwtKey) == 0 {
+			next(w, r)
+			return
+		}
+
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
+			http.Error(w, "Unauthorized: No token provided", http.StatusUnauthorized)
+			return
+		}
+
+		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+
+		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+			}
+			return config.AppConfig.JwtKey, nil
+		})
+
+		if err != nil || !token.Valid {
+			log.Printf("JWT Auth Failed: %v", err)
+			http.Error(w, "Unauthorized: Invalid or expired token", http.StatusUnauthorized)
+			return
+		}
+
+		next(w, r)
+	}
 }

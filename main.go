@@ -41,7 +41,7 @@ func main() {
 		log.Fatalf("Failed to chmod socket: %v", err)
 	}
 
-	http.HandleFunc(config.AppConfig.ProxyPath, handler.ProxyHandler)
+	http.HandleFunc(config.AppConfig.ProxyPath, handler.AuthMiddleware(handler.ProxyHandler))
 
 	server := &http.Server{
 		Handler: h2c.NewHandler(http.DefaultServeMux, &http2.Server{}),

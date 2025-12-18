@@ -5,6 +5,7 @@ import "os"
 type Config struct {
 	ProxyPath  string
 	SocketPath string
+	JwtKey     []byte
 }
 
 var AppConfig = &Config{
@@ -19,5 +20,12 @@ var AppConfig = &Config{
 			return v
 		}
 		return "/dev/shm/proxify.sock"
+	}(),
+	JwtKey: func() []byte {
+		v := os.Getenv("JWT_SIGNING_KEY")
+		if v != "" {
+			return []byte(v)
+		}
+		return []byte("")
 	}(),
 }
