@@ -40,9 +40,9 @@ func ProxyHandler(w http.ResponseWriter, r *http.Request) {
 	var err error
 
 	upstream := r.URL.Query().Get("upstream")
+	token := r.URL.Query().Get("token")
 	if len(config.AppConfig.JwtKey) > 0 {
-		tokenString := r.URL.Query().Get("token")
-		if !validateToken(tokenString) {
+		if !validateToken(token) {
 			http.Error(w, "Unauthorized: Invalid token", http.StatusUnauthorized)
 			return
 		}
@@ -55,6 +55,7 @@ func ProxyHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		q := u.Query()
 		q.Set("url", targetURL)
+		q.Set("token", token)
 		u.RawQuery = q.Encode()
 	} else {
 		u, err = url.Parse(targetURL)
