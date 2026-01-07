@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"proxify/config"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -90,15 +91,39 @@ func ProxyHandler(w http.ResponseWriter, r *http.Request) {
 			w.Header().Add(k, v)
 		}
 	}
-	w.WriteHeader(resp.StatusCode)
-	buf := bufferPool.Get().([]byte)
-	defer bufferPool.Put(buf)
-	written, err := io.CopyBuffer(w, resp.Body, buf)
-	if err != nil {
-		log.Printf("Error copying response body for %s: %v", targetURL, err)
+
+	contentLength := resp.Header.Get("Content-Length")
+	var written int64
+	var mode string
+
+	if contentLength != "" {
+		mode = "stream"
+		w.WriteHeader(resp.StatusCode)
+		buf := bufferPool.Get().([]byte)
+		defer bufferPool.Put(buf)
+
+		written, err = io.CopyBuffer(w, resp.Body, buf)
+		if err != nil {
+			log.Printf("Error copying response body for %s: %v", targetURL, err)
+		}
+	} else {
+		mode = "read-all"
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			http.Error(w, "Failed to read upstream body", http.StatusBadGateway)
+			return
+		}
+
+		w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+		w.WriteHeader(resp.StatusCode)
+		n, err := w.Write(body)
+		written = int64(n)
+		if err != nil {
+			log.Printf("Error writing response body for %s: %v", targetURL, err)
+		}
 	}
 
-	log.Printf("Proxy request -> %s , status=%d , size=%d bytes", targetURL, resp.StatusCode, written)
+	log.Printf("Proxy request -> %s , mode=%s , status=%d , size=%d bytes", targetURL, mode, resp.StatusCode, written)
 
 }
 
