@@ -32,6 +32,7 @@ var bufferPool = sync.Pool{
 }
 
 func ProxyHandler(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
 	targetURL := r.URL.Query().Get("url")
 	if targetURL == "" {
 		http.Error(w, "Missing url", http.StatusBadRequest)
@@ -123,8 +124,17 @@ func ProxyHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	log.Printf("Proxy request -> %s , mode=%s , status=%d , size=%d bytes", targetURL, mode, resp.StatusCode, written)
+	duration := time.Since(start)
 
+	up := upstream
+	if up == "" {
+		up = "direct"
+	}
+
+	log.Printf(
+		"Proxy request -> %s , upstream=%s , mode=%s , status=%d , size=%d bytes , cost=%s",
+		targetURL, up, mode, resp.StatusCode, written, duration,
+	)
 }
 
 func buildRequestHeader(header http.Header, targetURL string) http.Header {
