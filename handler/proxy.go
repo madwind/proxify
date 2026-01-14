@@ -49,7 +49,8 @@ func ProxyHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if upstream != "" {
+	upstreamUsed := upstream != ""
+	if upstreamUsed {
 		u, err = url.Parse("https://" + upstream + config.AppConfig.ProxyPath)
 		if err != nil {
 			http.Error(w, "Invalid upstream", http.StatusBadRequest)
@@ -67,7 +68,7 @@ func ProxyHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	reqHeaders := buildRequestHeader(r.Header, targetURL)
+	reqHeaders := buildRequestHeader(r.Header, targetURL, upstreamUsed)
 
 	req, err := http.NewRequest(r.Method, u.String(), nil)
 	if err != nil {
@@ -137,7 +138,7 @@ func ProxyHandler(w http.ResponseWriter, r *http.Request) {
 	)
 }
 
-func buildRequestHeader(header http.Header, targetURL string) http.Header {
+func buildRequestHeader(header http.Header, targetURL string, preserveRange bool) http.Header {
 	newHeader := http.Header{}
 	u, err := url.Parse(targetURL)
 	if err != nil {
@@ -150,8 +151,11 @@ func buildRequestHeader(header http.Header, targetURL string) http.Header {
 		skip := false
 		for _, ign := range ignoreHeaders {
 			if strings.HasPrefix(lower, ign) {
-				skip = true
-				break
+				if preserveRange && ign == "range" {
+					skip = false
+				} else {
+					skip = true
+				}
 			}
 		}
 		if !skip {
