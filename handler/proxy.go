@@ -98,9 +98,15 @@ func ProxyHandler(w http.ResponseWriter, r *http.Request) {
 	var written int64
 	var mode string
 
+	statusCode := resp.StatusCode
+	if statusCode == http.StatusPartialContent {
+		statusCode = http.StatusOK
+	}
+	w.WriteHeader(statusCode)
+
 	if contentLength != "" {
 		mode = "stream"
-		w.WriteHeader(resp.StatusCode)
+
 		buf := bufferPool.Get().([]byte)
 		defer bufferPool.Put(buf)
 
@@ -115,9 +121,7 @@ func ProxyHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Failed to read upstream body", http.StatusBadGateway)
 			return
 		}
-
 		w.Header().Set("Content-Length", strconv.Itoa(len(body)))
-		w.WriteHeader(resp.StatusCode)
 		n, err := w.Write(body)
 		written = int64(n)
 		if err != nil {
