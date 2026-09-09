@@ -5,26 +5,24 @@ use std::{
         Arc,
         atomic::{AtomicU64, Ordering},
     },
-    time::{Duration, Instant},
+    time::Instant,
 };
 
 use bytes::Bytes;
-use futures_util::TryStreamExt;
 use http::{
     HeaderMap, HeaderValue, Request, Response, StatusCode,
     header::{ACCEPT_ENCODING, CONTENT_LENGTH, CONTENT_TYPE, TRANSFER_ENCODING},
 };
 use http_body_util::{
-    BodyExt, Full, StreamBody,
+    BodyExt, Full,
     combinators::UnsyncBoxBody,
 };
-use hyper::body::{Frame, Incoming};
+use hyper::body::Incoming;
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
-use reqwest::{Client, Url};
 use serde_json::Value;
-use url::form_urlencoded;
+use url::{Url, form_urlencoded};
 
-use crate::config::Config;
+use crate::{client::OutboundClient, config::Config};
 
 const IGNORE_HEADERS: &[&str] = &[
     "host",
@@ -50,19 +48,13 @@ struct JwtVerifier {
 
 pub struct AppState {
     pub config: Config,
-    pub client: Client,
+    pub client: OutboundClient,
     jwt: Option<JwtVerifier>,
 }
 
 impl AppState {
-    pub fn new(config: Config) -> Result<Self, reqwest::Error> {
-        let client = Client::builder()
-            .timeout(Duration::from_secs(60))
-            .no_proxy()
-            .pool_idle_timeout(None)
-            .pool_max_idle_per_host(10)
-            .tls_danger_accept_invalid_certs(true)
-            .build()?;
+    pub fn new(config: Config) -> Result<Self, rustls::Error> {
+        let client = OutboundClient::new()?;
 
         let jwt = if config.jwt_key.is_empty() {
             None
@@ -195,14 +187,13 @@ async fn handle_proxy(
     let request_headers = build_request_headers(request.headers(), upstream_used);
     let upstream_response = state
         .client
-        .request(request.method().clone(), request_url)
-        .headers(request_headers)
-        .send()
+        .request(request.method().clone(), request_url, request_headers)
         .await
         .map_err(|error| ProxyError::new(StatusCode::BAD_GATEWAY, error.to_string()))?;
 
     let upstream_status = upstream_response.status();
     let mut response_headers = upstream_response.headers().clone();
+    let upstream_body = upstream_response.into_body();
     let upstream_label = if upstream_used {
         upstream.clone()
     } else {
@@ -219,11 +210,11 @@ async fn handle_proxy(
         ));
         let stream_log = Arc::clone(&transfer_log);
 
-        let stream = upstream_response
-            .bytes_stream()
-            .map_ok(move |chunk| {
-                stream_log.add_written(chunk.len() as u64);
-                Frame::data(chunk)
+        let body = upstream_body
+            .inspect_frame(move |frame| {
+                if let Some(chunk) = frame.data_ref() {
+                    stream_log.add_written(chunk.len() as u64);
+                }
             })
             .map_err(move |error| -> BoxError {
                 eprintln!(
@@ -231,15 +222,16 @@ async fn handle_proxy(
                     target_for_error, error
                 );
                 Box::new(error)
-            });
+            })
+            .boxed_unsync();
 
-        let body = StreamBody::new(stream).boxed_unsync();
         Ok(build_response(upstream_status, response_headers, body))
     } else {
-        let body = upstream_response
-            .bytes()
+        let body = upstream_body
+            .collect()
             .await
-            .map_err(|_| ProxyError::new(StatusCode::BAD_GATEWAY, "Failed to read upstream body"))?;
+            .map_err(|_| ProxyError::new(StatusCode::BAD_GATEWAY, "Failed to read upstream body"))?
+            .to_bytes();
 
         response_headers.remove(TRANSFER_ENCODING);
         response_headers.insert(
