@@ -163,11 +163,6 @@ async fn handle_proxy(
         .map_err(|error| ProxyError::new(StatusCode::BAD_GATEWAY, error.to_string()))?;
 
     let upstream_status = upstream_response.status();
-    let response_status = if upstream_status == StatusCode::PARTIAL_CONTENT {
-        StatusCode::OK
-    } else {
-        upstream_status
-    };
     let mut response_headers = upstream_response.headers().clone();
     let upstream_label = if upstream_used {
         upstream.clone()
@@ -200,7 +195,7 @@ async fn handle_proxy(
             });
 
         let body = StreamBody::new(stream).boxed_unsync();
-        Ok(build_response(response_status, response_headers, body))
+        Ok(build_response(upstream_status, response_headers, body))
     } else {
         let body = upstream_response
             .bytes()
@@ -224,7 +219,7 @@ async fn handle_proxy(
         );
 
         Ok(build_response(
-            response_status,
+            upstream_status,
             response_headers,
             full_body(body),
         ))
