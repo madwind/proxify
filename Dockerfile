@@ -3,12 +3,12 @@ FROM rust:1.98-alpine3.24 AS builder
 
 WORKDIR /app
 
-COPY Cargo.toml ./
+COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/app/target \
-    cargo build --release && \
+    cargo build --release --locked && \
     cp /app/target/release/proxify /app/proxify
 
 FROM scratch
