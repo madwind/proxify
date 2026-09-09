@@ -1,7 +1,10 @@
 use std::{
     convert::Infallible,
     error::Error,
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
     time::{Duration, Instant},
 };
 
@@ -9,7 +12,7 @@ use bytes::Bytes;
 use futures_util::TryStreamExt;
 use http::{
     HeaderMap, HeaderValue, Request, Response, StatusCode,
-    header::{CONTENT_LENGTH, CONTENT_TYPE},
+    header::{CONTENT_LENGTH, CONTENT_TYPE, TRANSFER_ENCODING},
 };
 use http_body_util::{
     BodyExt, Full, StreamBody,
@@ -74,7 +77,7 @@ struct TransferLog {
     target: String,
     upstream: String,
     status: StatusCode,
-    written: u64,
+    written: AtomicU64,
 }
 
 impl TransferLog {
@@ -84,8 +87,12 @@ impl TransferLog {
             target,
             upstream,
             status,
-            written: 0,
+            written: AtomicU64::new(0),
         }
+    }
+
+    fn add_written(&self, bytes: u64) {
+        self.written.fetch_add(bytes, Ordering::Relaxed);
     }
 }
 
@@ -96,7 +103,7 @@ impl Drop for TransferLog {
             self.target,
             self.upstream,
             self.status.as_u16(),
-            self.written,
+            self.written.load(Ordering::Relaxed),
             self.started.elapsed(),
         );
     }
@@ -168,17 +175,18 @@ async fn handle_proxy(
 
     if response_headers.contains_key(CONTENT_LENGTH) {
         let target_for_error = target_url.clone();
-        let mut transfer_log = TransferLog::new(
+        let transfer_log = Arc::new(TransferLog::new(
             started,
             target_url,
             upstream_label,
             upstream_status,
-        );
+        ));
+        let stream_log = Arc::clone(&transfer_log);
 
         let stream = upstream_response
             .bytes_stream()
             .map_ok(move |chunk| {
-                transfer_log.written += chunk.len() as u64;
+                stream_log.add_written(chunk.len() as u64);
                 Frame::data(chunk)
             })
             .map_err(move |error| -> BoxError {
@@ -197,6 +205,7 @@ async fn handle_proxy(
             .await
             .map_err(|_| ProxyError::new(StatusCode::BAD_GATEWAY, "Failed to read upstream body"))?;
 
+        response_headers.remove(TRANSFER_ENCODING);
         response_headers.insert(
             CONTENT_LENGTH,
             HeaderValue::from_str(&body.len().to_string())
