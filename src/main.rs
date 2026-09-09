@@ -10,11 +10,8 @@ use std::{
     sync::Arc,
 };
 
-use hyper::service::service_fn;
-use hyper_util::{
-    rt::{TokioExecutor, TokioIo},
-    server::conn::auto::Builder,
-};
+use hyper::{server::conn::http1, service::service_fn};
+use hyper_util::rt::TokioIo;
 use tokio::net::UnixListener;
 
 use config::Config;
@@ -58,14 +55,11 @@ async fn main() -> Result<(), BoxError> {
         tokio::spawn(async move {
             let service = service_fn(move |request| {
                 let state = state.clone();
-                async move {
-                    Ok::<_, Infallible>(proxy::handle(request, state).await)
-                }
+                async move { Ok::<_, Infallible>(proxy::handle(request, state).await) }
             });
-            let builder = Builder::new(TokioExecutor::new());
 
-            if let Err(error) = builder
-                .serve_connection_with_upgrades(TokioIo::new(stream), service)
+            if let Err(error) = http1::Builder::new()
+                .serve_connection(TokioIo::new(stream), service)
                 .await
             {
                 eprintln!("HTTP connection error: {error}");

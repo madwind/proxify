@@ -12,14 +12,14 @@ use bytes::Bytes;
 use futures_util::TryStreamExt;
 use http::{
     HeaderMap, HeaderValue, Request, Response, StatusCode,
-    header::{CONTENT_LENGTH, CONTENT_TYPE, TRANSFER_ENCODING},
+    header::{ACCEPT_ENCODING, CONTENT_LENGTH, CONTENT_TYPE, TRANSFER_ENCODING},
 };
 use http_body_util::{
     BodyExt, Full, StreamBody,
     combinators::UnsyncBoxBody,
 };
 use hyper::body::{Frame, Incoming};
-use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode, decode_header};
+use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
 use reqwest::{Client, Url};
 use serde_json::Value;
 use url::form_urlencoded;
@@ -33,6 +33,8 @@ const IGNORE_HEADERS: &[&str] = &[
     "cdn-loop",
     "cf-",
     "x-",
+    "sec-",
+    "accept-encoding",
     "range",
     "upgrade",
     "connection",
@@ -41,9 +43,15 @@ const IGNORE_HEADERS: &[&str] = &[
 type BoxError = Box<dyn Error + Send + Sync>;
 type ProxyBody = UnsyncBoxBody<Bytes, BoxError>;
 
+struct JwtVerifier {
+    key: DecodingKey,
+    validation: Validation,
+}
+
 pub struct AppState {
     pub config: Config,
     pub client: Client,
+    jwt: Option<JwtVerifier>,
 }
 
 impl AppState {
@@ -56,7 +64,27 @@ impl AppState {
             .tls_danger_accept_invalid_certs(true)
             .build()?;
 
-        Ok(Self { config, client })
+        let jwt = if config.jwt_key.is_empty() {
+            None
+        } else {
+            let mut validation = Validation::new(Algorithm::HS256);
+            validation.algorithms = vec![Algorithm::HS256, Algorithm::HS384, Algorithm::HS512];
+            validation.required_spec_claims.clear();
+            validation.leeway = 0;
+            validation.validate_nbf = true;
+            validation.validate_aud = false;
+
+            Some(JwtVerifier {
+                key: DecodingKey::from_secret(&config.jwt_key),
+                validation,
+            })
+        };
+
+        Ok(Self {
+            config,
+            client,
+            jwt,
+        })
     }
 }
 
@@ -72,6 +100,13 @@ impl ProxyError {
             message: message.into(),
         }
     }
+}
+
+#[derive(Default)]
+struct ProxyQuery {
+    url: Option<String>,
+    upstream: Option<String>,
+    token: Option<String>,
 }
 
 struct TransferLog {
@@ -127,13 +162,17 @@ async fn handle_proxy(
     state: Arc<AppState>,
 ) -> Result<Response<ProxyBody>, ProxyError> {
     let started = Instant::now();
-    let target_url = query_param(&request, "url")
+    let query = parse_query(&request);
+    let target_url = query
+        .url
         .filter(|value| !value.is_empty())
         .ok_or_else(|| ProxyError::new(StatusCode::BAD_REQUEST, "Missing url"))?;
-    let upstream = query_param(&request, "upstream").unwrap_or_default();
-    let token = query_param(&request, "token").unwrap_or_default();
+    let upstream = query.upstream.unwrap_or_default();
+    let token = query.token.unwrap_or_default();
 
-    if !state.config.jwt_key.is_empty() && !validate_token(&token, &state.config.jwt_key) {
+    if let Some(jwt) = &state.jwt
+        && !validate_token(&token, jwt)
+    {
         return Err(ProxyError::new(
             StatusCode::UNAUTHORIZED,
             "Unauthorized: Invalid token",
@@ -226,11 +265,24 @@ async fn handle_proxy(
     }
 }
 
-fn query_param(request: &Request<Incoming>, name: &str) -> Option<String> {
-    let query = request.uri().query()?;
-    form_urlencoded::parse(query.as_bytes())
-        .find(|(key, _)| key == name)
-        .map(|(_, value)| value.into_owned())
+fn parse_query(request: &Request<Incoming>) -> ProxyQuery {
+    let Some(query) = request.uri().query() else {
+        return ProxyQuery::default();
+    };
+
+    let mut result = ProxyQuery::default();
+    for (key, value) in form_urlencoded::parse(query.as_bytes()) {
+        match key.as_ref() {
+            "url" if result.url.is_none() => result.url = Some(value.into_owned()),
+            "upstream" if result.upstream.is_none() => {
+                result.upstream = Some(value.into_owned());
+            }
+            "token" if result.token.is_none() => result.token = Some(value.into_owned()),
+            _ => {}
+        }
+    }
+
+    result
 }
 
 fn build_request_headers(headers: &HeaderMap, preserve_range: bool) -> HeaderMap {
@@ -247,37 +299,12 @@ fn build_request_headers(headers: &HeaderMap, preserve_range: bool) -> HeaderMap
         }
     }
 
+    filtered.insert(ACCEPT_ENCODING, HeaderValue::from_static("identity"));
     filtered
 }
 
-fn validate_token(token: &str, key: &[u8]) -> bool {
-    if token.is_empty() {
-        return false;
-    }
-
-    let Ok(header) = decode_header(token) else {
-        return false;
-    };
-
-    if !matches!(
-        header.alg,
-        Algorithm::HS256 | Algorithm::HS384 | Algorithm::HS512
-    ) {
-        return false;
-    }
-
-    let mut validation = Validation::new(header.alg);
-    validation.required_spec_claims.clear();
-    validation.leeway = 0;
-    validation.validate_nbf = true;
-    validation.validate_aud = false;
-
-    decode::<Value>(
-        token,
-        &DecodingKey::from_secret(key),
-        &validation,
-    )
-    .is_ok()
+fn validate_token(token: &str, jwt: &JwtVerifier) -> bool {
+    !token.is_empty() && decode::<Value>(token, &jwt.key, &jwt.validation).is_ok()
 }
 
 fn build_response(
