@@ -15,10 +15,10 @@ updates:
     commit-message:
       prefix: "deps(actions)"
 
-  - package-ecosystem: "gomod"
+  - package-ecosystem: "cargo"
     directory: "/"
     schedule:
       interval: "daily"
     commit-message:
-      prefix: "deps(go)"
+      prefix: "deps(rust)"
     open-pull-requests-limit: 5

@@ -1,19 +1,15 @@
-FROM golang:1.26-trixie AS builder
+FROM rust:1.98-alpine3.24 AS builder
 
 WORKDIR /app
 
-COPY . .
+COPY Cargo.toml ./
+COPY src ./src
 
-ARG BUILDTIME
-ARG TARGETOS
-ARG TARGETARCH
-
-RUN CGO_ENABLED=0 \
-    go build -o proxify -ldflags="-s -w" .
+RUN cargo build --release
 
 FROM scratch
 
 WORKDIR /app
-COPY --from=builder /app/proxify .
+COPY --from=builder /app/target/release/proxify /app/proxify
 
-ENTRYPOINT ["./proxify"]
+ENTRYPOINT ["/app/proxify"]
