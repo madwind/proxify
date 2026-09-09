@@ -1,0 +1,42 @@
+name: Verify Hyper Client
+
+on:
+  push:
+    branches: ["master"]
+    paths:
+      - "src/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/verify_hyper.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Rust 1.98
+        uses: dtolnay/rust-toolchain@1.98
+
+      - name: Refresh lockfile
+        run: cargo generate-lockfile
+
+      - name: Check release build
+        run: cargo check --release --locked
+
+      - name: Commit Cargo.lock
+        run: |
+          if git diff --quiet -- Cargo.lock; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Cargo.lock
+          git commit -m "chore: update Cargo.lock"
+          git push
