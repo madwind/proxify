@@ -51,7 +51,6 @@ impl AppState {
         let client = Client::builder()
             .timeout(Duration::from_secs(60))
             .no_proxy()
-            .http1_only()
             .pool_idle_timeout(None)
             .pool_max_idle_per_host(10)
             .tls_danger_accept_invalid_certs(true)
