@@ -5,6 +5,15 @@ on:
     branches: [ "master" ]
     paths:
       - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'src/**'
+      - 'Dockerfile'
+      - '.dockerignore'
+      - '.github/workflows/publish_docker.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 concurrency:
   group: docker-build
@@ -23,22 +32,72 @@ jobs:
         include:
           - platform: linux/amd64
             runner: ubuntu-24.04
+            target: x86_64-unknown-linux-musl
           - platform: linux/arm64
             runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
 
-      - name: Read version from Cargo.toml
+      - name: Read package metadata from Cargo.toml
         id: extract_app_version
         run: |
           APP_VERSION=$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["package"]["version"])')
           echo "app_version=$APP_VERSION" >> "$GITHUB_OUTPUT"
+          RUST_VERSION=$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["package"]["rust-version"])')
+          echo "rust_version=$RUST_VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Prepare
         run: |
           platform=${{ matrix.platform }}
           echo "PLATFORM_PAIR=${platform//\//-}" >> "$GITHUB_ENV"
+
+      - name: Install musl build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes musl-tools cmake
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.extract_app_version.outputs.rust_version }}
+          targets: ${{ matrix.target }}
+
+      - name: Cache Rust build
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: rust-${{ matrix.target }}-${{ steps.extract_app_version.outputs.rust_version }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'src/**') }}
+          restore-keys: |
+            rust-${{ matrix.target }}-${{ steps.extract_app_version.outputs.rust_version }}-
+
+      - name: Build static binary
+        env:
+          RUST_TARGET: ${{ matrix.target }}
+        run: |
+          target_key=${RUST_TARGET//-/_}
+          export "CARGO_TARGET_${target_key^^}_LINKER=musl-gcc"
+          export "CC_${target_key}=musl-gcc"
+          cargo build --release --locked --target "$RUST_TARGET"
+          mkdir -p dist
+          cp "target/$RUST_TARGET/release/proxify" dist/proxify
+          elf_headers=$(readelf -l dist/proxify)
+          if [[ "$elf_headers" == *INTERP* ]]; then
+            echo "The binary requires a dynamic loader and cannot run in scratch" >&2
+            exit 1
+          fi
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: proxify-${{ env.PLATFORM_PAIR }}
+          path: dist/proxify
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Docker meta
         id: meta
@@ -59,6 +118,7 @@ jobs:
         id: build
         uses: docker/build-push-action@v7
         with:
+          context: .
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
           tags: ${{ env.REGISTRY_IMAGE }}
