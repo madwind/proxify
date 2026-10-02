@@ -12,7 +12,7 @@ impl Config {
         Self {
             proxy_path: env::var("PROXY_PATH").unwrap_or_else(|_| "/api/proxy/file".to_owned()),
             socket_path: env::var("SOCKET_PATH")
-                .unwrap_or_else(|_| "/dev/shm/proxify.sock".to_owned()),
+                .unwrap_or_else(|_| "/run/proxify/proxify.sock".to_owned()),
             jwt_key: env::var("JWT_SIGNING_KEY")
                 .unwrap_or_default()
                 .into_bytes(),

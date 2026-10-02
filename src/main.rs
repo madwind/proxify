@@ -1,7 +1,6 @@
 mod client;
 mod config;
 mod proxy;
-mod version;
 
 use std::{
     convert::Infallible,
@@ -17,7 +16,6 @@ use tokio::net::UnixListener;
 
 use config::Config;
 use proxy::AppState;
-use version::VERSION;
 
 type BoxError = Box<dyn Error + Send + Sync>;
 
@@ -46,7 +44,7 @@ async fn main() -> Result<(), BoxError> {
 
     eprintln!(
         "Proxify {} listening on socket {}, proxy path: {}",
-        VERSION, socket_path, proxy_path
+        env!("CARGO_PKG_VERSION"), socket_path, proxy_path
     );
 
     loop {

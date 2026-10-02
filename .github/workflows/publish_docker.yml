@@ -4,7 +4,7 @@ on:
   push:
     branches: [ "master" ]
     paths:
-      - 'src/version.rs'
+      - 'Cargo.toml'
 
 concurrency:
   group: docker-build
@@ -29,10 +29,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
 
-      - name: Read version from src/version.rs
+      - name: Read version from Cargo.toml
         id: extract_app_version
         run: |
-          APP_VERSION=$(awk -F'"' '/pub const VERSION/ { print $2 }' src/version.rs)
+          APP_VERSION=$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["package"]["version"])')
           echo "app_version=$APP_VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Prepare
