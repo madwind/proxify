@@ -2,13 +2,7 @@ mod client;
 mod config;
 mod proxy;
 
-use std::{
-    convert::Infallible,
-    error::Error,
-    os::unix::fs::PermissionsExt,
-    path::Path,
-    sync::Arc,
-};
+use std::{convert::Infallible, error::Error, os::unix::fs::PermissionsExt, path::Path, sync::Arc};
 
 use hyper::{server::conn::http1, service::service_fn};
 use hyper_util::rt::TokioIo;
@@ -21,9 +15,10 @@ type BoxError = Box<dyn Error + Send + Sync>;
 
 #[tokio::main]
 async fn main() -> Result<(), BoxError> {
-    let config = Config::from_env();
-    let socket_path = config.socket_path.clone();
-    let proxy_path = config.proxy_path.clone();
+    let config = Config::from_env()?;
+    let state = Arc::new(AppState::new(config)?);
+    let socket_path = state.config.socket_path.clone();
+    let proxy_path = state.config.proxy_path.clone();
 
     if let Some(parent) = Path::new(&socket_path).parent() {
         tokio::fs::create_dir_all(parent).await?;
@@ -34,17 +29,13 @@ async fn main() -> Result<(), BoxError> {
     }
 
     let listener = UnixListener::bind(&socket_path)?;
-    tokio::fs::set_permissions(
-        &socket_path,
-        std::fs::Permissions::from_mode(0o666),
-    )
-    .await?;
-
-    let state = Arc::new(AppState::new(config)?);
+    tokio::fs::set_permissions(&socket_path, std::fs::Permissions::from_mode(0o666)).await?;
 
     eprintln!(
         "Proxify {} listening on socket {}, proxy path: {}",
-        env!("CARGO_PKG_VERSION"), socket_path, proxy_path
+        env!("CARGO_PKG_VERSION"),
+        socket_path,
+        proxy_path
     );
 
     loop {

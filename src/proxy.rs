@@ -13,10 +13,7 @@ use http::{
     HeaderMap, HeaderValue, Request, Response, StatusCode,
     header::{ACCEPT_ENCODING, CONTENT_LENGTH, CONTENT_TYPE, TRANSFER_ENCODING},
 };
-use http_body_util::{
-    BodyExt, Full,
-    combinators::UnsyncBoxBody,
-};
+use http_body_util::{BodyExt, Full, combinators::UnsyncBoxBody};
 use hyper::body::Incoming;
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
 use serde_json::Value;
@@ -49,28 +46,36 @@ struct JwtVerifier {
 pub struct AppState {
     pub config: Config,
     pub client: OutboundClient,
-    jwt: Option<JwtVerifier>,
+    jwt: JwtVerifier,
 }
 
 impl AppState {
-    pub fn new(config: Config) -> Result<Self, rustls::Error> {
+    pub fn new(config: Config) -> Result<Self, BoxError> {
         let client = OutboundClient::new()?;
 
-        let jwt = if config.jwt_key.is_empty() {
-            None
-        } else {
-            let mut validation = Validation::new(Algorithm::HS256);
-            validation.algorithms = vec![Algorithm::HS256, Algorithm::HS384, Algorithm::HS512];
-            validation.required_spec_claims.clear();
-            validation.leeway = 0;
-            validation.validate_nbf = true;
-            validation.validate_aud = false;
+        let public_key = std::fs::read(&config.jwt_public_key_file)?;
+        let key = DecodingKey::from_ed_pem(&public_key)?;
+        if key.try_get_as_bytes()?.len() != 32 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "JWT_PUBLIC_KEY_FILE must contain a 32-byte Ed25519 public key",
+            )
+            .into());
+        }
+        // Validate the key at startup rather than on the first proxy request.
+        (jsonwebtoken::crypto::rust_crypto::DEFAULT_PROVIDER.verifier_factory)(
+            &Algorithm::EdDSA,
+            &key,
+        )?;
+        let mut validation = Validation::new(Algorithm::EdDSA);
+        validation.set_required_spec_claims(&["exp", "sub"]);
+        validation.leeway = 0;
+        // jsonwebtoken otherwise accepts exp == the current second.
+        validation.reject_tokens_expiring_in_less_than = 1;
+        validation.validate_nbf = true;
+        validation.validate_aud = false;
 
-            Some(JwtVerifier {
-                key: DecodingKey::from_secret(&config.jwt_key),
-                validation,
-            })
-        };
+        let jwt = JwtVerifier { key, validation };
 
         Ok(Self {
             config,
@@ -162,9 +167,7 @@ async fn handle_proxy(
     let upstream = query.upstream.unwrap_or_default();
     let token = query.token.unwrap_or_default();
 
-    if let Some(jwt) = &state.jwt
-        && !validate_token(&token, jwt)
-    {
+    if !validate_token(&token, &state.jwt) {
         return Err(ProxyError::new(
             StatusCode::UNAUTHORIZED,
             "Unauthorized: Invalid token",
@@ -282,9 +285,9 @@ fn build_request_headers(headers: &HeaderMap, preserve_range: bool) -> HeaderMap
 
     for (name, value) in headers {
         let lower = name.as_str();
-        let skip = IGNORE_HEADERS.iter().any(|ignored| {
-            lower.starts_with(ignored) && !(preserve_range && *ignored == "range")
-        });
+        let skip = IGNORE_HEADERS
+            .iter()
+            .any(|ignored| lower.starts_with(ignored) && !(preserve_range && *ignored == "range"));
 
         if !skip {
             filtered.append(name.clone(), value.clone());
@@ -296,14 +299,22 @@ fn build_request_headers(headers: &HeaderMap, preserve_range: bool) -> HeaderMap
 }
 
 fn validate_token(token: &str, jwt: &JwtVerifier) -> bool {
-    !token.is_empty() && decode::<Value>(token, &jwt.key, &jwt.validation).is_ok()
+    if token.is_empty() || token.len() > 8192 {
+        return false;
+    }
+    let Ok(data) = decode::<Value>(token, &jwt.key, &jwt.validation) else {
+        return false;
+    };
+    data.header.crit.is_none()
+        && !data.header.extras.inner().contains_key("b64")
+        && data
+            .claims
+            .get("sub")
+            .and_then(Value::as_str)
+            .is_some_and(|subject| !subject.is_empty())
 }
 
-fn build_response(
-    status: StatusCode,
-    headers: HeaderMap,
-    body: ProxyBody,
-) -> Response<ProxyBody> {
+fn build_response(status: StatusCode, headers: HeaderMap, body: ProxyBody) -> Response<ProxyBody> {
     let mut response = Response::new(body);
     *response.status_mut() = status;
     *response.headers_mut() = headers;
