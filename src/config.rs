@@ -3,7 +3,7 @@ use std::{env, io};
 #[derive(Debug)]
 pub struct Config {
     pub proxy_path: String,
-    pub socket_path: String,
+    pub listen_addr: String,
     pub jwt_public_key_file: String,
 }
 
@@ -20,8 +20,7 @@ impl Config {
             })?;
         Ok(Self {
             proxy_path: env::var("PROXY_PATH").unwrap_or_else(|_| "/api/proxy/file".to_owned()),
-            socket_path: env::var("SOCKET_PATH")
-                .unwrap_or_else(|_| "/run/proxify/proxify.sock".to_owned()),
+            listen_addr: env::var("LISTEN").unwrap_or_else(|_| "127.0.0.1:18081".to_owned()),
             jwt_public_key_file,
         })
     }

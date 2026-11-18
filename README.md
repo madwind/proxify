@@ -1,7 +1,11 @@
 # Proxify
 
-Rust HTTP proxy listening on a Unix socket. `PROXY_PATH` defaults to
-`/api/proxy/file`; `SOCKET_PATH` defaults to `/run/proxify/proxify.sock`.
+Rust HTTP proxy. `LISTEN` sets the TCP address and defaults to `127.0.0.1:18081`.
+`PROXY_PATH` defaults to `/api/proxy/file`.
+
+Version `2.0.0` switches the listener to TCP. When upgrading a Unix socket
+deployment, update the reverse proxy to use the TCP address. The K3s deployment
+uses host networking so each node's Nginx can reach Proxify on its loopback address.
 
 ## JWT verification
 

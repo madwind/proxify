@@ -2,11 +2,11 @@ mod client;
 mod config;
 mod proxy;
 
-use std::{convert::Infallible, error::Error, os::unix::fs::PermissionsExt, path::Path, sync::Arc};
+use std::{convert::Infallible, error::Error, sync::Arc};
 
 use hyper::{server::conn::http1, service::service_fn};
 use hyper_util::rt::TokioIo;
-use tokio::net::UnixListener;
+use tokio::net::TcpListener;
 
 use config::Config;
 use proxy::AppState;
@@ -17,25 +17,13 @@ type BoxError = Box<dyn Error + Send + Sync>;
 async fn main() -> Result<(), BoxError> {
     let config = Config::from_env()?;
     let state = Arc::new(AppState::new(config)?);
-    let socket_path = state.config.socket_path.clone();
-    let proxy_path = state.config.proxy_path.clone();
-
-    if let Some(parent) = Path::new(&socket_path).parent() {
-        tokio::fs::create_dir_all(parent).await?;
-    }
-
-    if tokio::fs::metadata(&socket_path).await.is_ok() {
-        tokio::fs::remove_file(&socket_path).await?;
-    }
-
-    let listener = UnixListener::bind(&socket_path)?;
-    tokio::fs::set_permissions(&socket_path, std::fs::Permissions::from_mode(0o666)).await?;
+    let listener = TcpListener::bind(state.config.listen_addr.as_str()).await?;
 
     eprintln!(
-        "Proxify {} listening on socket {}, proxy path: {}",
+        "Proxify {} listening on {}, proxy path: {}",
         env!("CARGO_PKG_VERSION"),
-        socket_path,
-        proxy_path
+        listener.local_addr()?,
+        state.config.proxy_path
     );
 
     loop {
